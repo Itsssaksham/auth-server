@@ -30,21 +30,34 @@ func TestCSRFMiddleware_SafeMethodsAllowed(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestCSRFMiddleware_NoCookieSkipsBearerFlow(t *testing.T) {
+func TestCSRFMiddleware_NoSessionCookieSkipsBearerFlow(t *testing.T) {
 	r := setupCSRFRouter()
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodPost, "/test", nil)
-	// No csrf_token cookie — Bearer token flow, should pass
+	// No auth_token cookie — Bearer token (or unauthenticated) flow, should pass
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestCSRFMiddleware_SessionCookiePresentButNoCSRFCookie(t *testing.T) {
+	// Regression test: a stale/expired csrf_token cookie must not let a
+	// cookie-authenticated request bypass CSRF validation just because the
+	// CSRF cookie itself is gone. auth_token (7d) outlives csrf_token (24h).
+	r := setupCSRFRouter()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/test", nil)
+	req.AddCookie(&http.Cookie{Name: "auth_token", Value: "sometoken"})
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
 func TestCSRFMiddleware_MissingHeader(t *testing.T) {
 	r := setupCSRFRouter()
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodPost, "/test", nil)
+	req.AddCookie(&http.Cookie{Name: "auth_token", Value: "sometoken"})
 	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "sometoken"})
-	// Cookie present but no header
+	// Cookies present but no header
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
@@ -53,6 +66,7 @@ func TestCSRFMiddleware_InvalidToken(t *testing.T) {
 	r := setupCSRFRouter()
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodPost, "/test", nil)
+	req.AddCookie(&http.Cookie{Name: "auth_token", Value: "sometoken"})
 	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "correcttoken"})
 	req.Header.Set("X-CSRF-Token", "wrongtoken")
 	r.ServeHTTP(w, req)
@@ -63,6 +77,7 @@ func TestCSRFMiddleware_ValidToken(t *testing.T) {
 	r := setupCSRFRouter()
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodPost, "/test", nil)
+	req.AddCookie(&http.Cookie{Name: "auth_token", Value: "sometoken"})
 	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "validtoken123"})
 	req.Header.Set("X-CSRF-Token", "validtoken123")
 	r.ServeHTTP(w, req)

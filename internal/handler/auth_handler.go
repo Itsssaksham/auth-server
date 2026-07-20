@@ -10,9 +10,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/roshankumar0036singh/auth-server/internal/dto"
+	"github.com/roshankumar0036singh/auth-server/internal/middleware"
 	"github.com/roshankumar0036singh/auth-server/internal/service"
 	"github.com/roshankumar0036singh/auth-server/internal/utils"
-	"github.com/roshankumar0036singh/auth-server/internal/middleware"
 )
 
 const (
@@ -351,13 +351,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	// Set session cookie for browser flows (like OAuth)
-    // MaxAge is 7 days (matching refresh token)
-    c.SetCookie("auth_token", loginResp.AccessToken, 7*24*3600, "/", "", false, true)
+	// MaxAge is 7 days (matching refresh token)
+	c.SetCookie(middleware.AuthCookieName, loginResp.AccessToken, 7*24*3600, "/", "", true, true)
 
-    // Rotate CSRF token on login
-    middleware.RotateCSRFToken(c)
+	// Rotate CSRF token on login
+	if err := middleware.RotateCSRFToken(c); err != nil {
+		utils.InternalServerErrorResponse(c, "Failed to issue CSRF token")
+		return
+	}
 
-    c.JSON(http.StatusOK, utils.SuccessResponse(msgLoginSuccess, loginResp))
+	c.JSON(http.StatusOK, utils.SuccessResponse(msgLoginSuccess, loginResp))
 }
 
 // RefreshToken handles refresh token requests with token rotation
@@ -421,10 +424,15 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		return
 	}
 
-	// Rotate CSRF token on logout
-    middleware.RotateCSRFToken(c)
+	// Clear the session and CSRF cookies so a stolen/cached browser session
+	// can't be replayed after logout.
+	middleware.ClearAuthCookie(c)
+	if err := middleware.RotateCSRFToken(c); err != nil {
+		utils.InternalServerErrorResponse(c, "Failed to rotate CSRF token")
+		return
+	}
 
-    c.JSON(http.StatusOK, utils.SuccessResponse("Logout successful", nil))
+	c.JSON(http.StatusOK, utils.SuccessResponse("Logout successful", nil))
 }
 
 // LogoutAll handles logout from all devices
@@ -458,10 +466,15 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 		return
 	}
 
-	// Rotate CSRF token on logout-all
-    middleware.RotateCSRFToken(c)
+	// Clear the session and CSRF cookies so a stolen/cached browser session
+	// can't be replayed after logout.
+	middleware.ClearAuthCookie(c)
+	if err := middleware.RotateCSRFToken(c); err != nil {
+		utils.InternalServerErrorResponse(c, "Failed to rotate CSRF token")
+		return
+	}
 
-    c.JSON(http.StatusOK, utils.SuccessResponse("Logged out from all devices", nil))
+	c.JSON(http.StatusOK, utils.SuccessResponse("Logged out from all devices", nil))
 }
 
 // GetMe returns the current authenticated user's info
