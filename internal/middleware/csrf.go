@@ -37,14 +37,18 @@ func SetCSRFTokenHandler(c *gin.Context) {
 		return
 	}
 
+	// HttpOnly is intentionally false: this is a double-submit CSRF cookie,
+	// so client-side JS must be able to read it to echo it back in the
+	// X-CSRF-Token header. This is a reviewed SonarCloud security hotspot,
+	// not a suppressible issue — NOSONAR has no effect on hotspots.
 	c.SetCookie(
 		csrfCookieName,
 		token,
 		csrfCookieMaxAge,
 		"/",
-		"",    // domain — empty means current host
-		true,  // secure — HTTPS only
-		false, // HttpOnly=false intentional: JS must read token to send in X-CSRF-Token header -- NOSONAR
+		"",   // domain — empty means current host
+		true, // secure — HTTPS only
+		false,
 	)
 
 	c.JSON(http.StatusOK, utils.SuccessResponse("CSRF token issued", gin.H{
@@ -112,7 +116,8 @@ func RotateCSRFToken(c *gin.Context) error {
 	if err != nil {
 		return err
 	}
-	c.SetCookie(csrfCookieName, token, csrfCookieMaxAge, "/", "", true, false) // HttpOnly=false intentional: JS must read token to send in X-CSRF-Token header -- NOSONAR
+	// HttpOnly=false intentional; see SetCSRFTokenHandler above.
+	c.SetCookie(csrfCookieName, token, csrfCookieMaxAge, "/", "", true, false)
 	return nil
 }
 
